@@ -67,6 +67,32 @@ This document records the architectural decisions, system milestones, state mach
 
 ---
 
+### Phase 3: Hackathon Aggregation Engine & Catalog Discovery (Completed ✅)
+- **Date Completed:** 16 November 2026
+- **Accomplishments:**
+  1. Implemented canonical hackathon data schema in `app/schemas/hackathon.py` matching SRS section 6.3.
+  2. Built extensible scraper architecture (`scraper/core/`):
+     - `base_scraper.py`: Abstract crawler defining fetch, extract, normalize, and validate steps.
+     - `normalizer.py`: URL canonicalization (stripping UTM/trackers), date parsing (ISO & timestamps), mode normalization (`online`, `offline`, `hybrid`), and dynamic event status computation (`registration_open`, `ongoing`, `completed`).
+     - `validator.py`: Integrity validation enforcing valid URLs, schemas, date ranges, and title requirements.
+  3. Created source adapters in `scraper/sources/`:
+     - `mock.py`: Realistic mock adapter for testing, continuous integration, and pipeline verification.
+     - `devfolio.py`: Integration adapter for fetching hackathon listings from Devfolio's open public API.
+  4. Implemented `HackathonService` with tiered deduplication:
+     - Deduplication Tier 1: `source_name` + `source_event_id`.
+     - Deduplication Tier 2: Canonical `event_url`.
+     - Deduplication Tier 3: Case-insensitive composite matching (`title` + `organizer`).
+     - Automated updates of event status, deadlines, and `last_scraped_at` timestamps on repeated crawl cycles.
+  5. Built public catalog and bookmarking API endpoints in `app/api/v1/hackathons.py`:
+     - `GET /api/v1/hackathons`: Filter by query, mode, status, theme, with cursor/offset pagination.
+     - `GET /api/v1/hackathons/{id}`: Detailed event page with source attribution and user bookmark flag.
+     - `POST /api/v1/hackathons/{id}/bookmark` & `DELETE /api/v1/hackathons/{id}/bookmark`: Idempotent bookmarking.
+     - `GET /api/v1/hackathons/saved`: Listing current user's saved events.
+     - `POST /api/v1/hackathons/admin/scrape-trigger`: On-demand manual/cron scrape invocation endpoint.
+  6. Added tests in `tests/unit/test_hackathons_and_scraper.py` verifying normalization, validation, scraper ingestion, deduplication, catalog search, and bookmarking (12/12 tests passing).
+
+---
+
 ## 4. Key Architectural & Business Rules
 1. **Contextual Roles:** Users do not have fixed global participant/leader roles. Any user can be a team leader for team X while being a participant applying to team Y.
 2. **Two-Sided Recruitment:** A candidate is never an official team member merely because a leader shortlists them or the candidate accepts an invitation.

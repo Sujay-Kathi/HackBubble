@@ -1,4 +1,12 @@
+import os
+import sys
 from contextlib import asynccontextmanager
+
+# Ensure repository root is on sys.path for scraper package
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
