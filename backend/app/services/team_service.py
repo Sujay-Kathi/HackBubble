@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.ai.embeddings.generator import embed_skills, embed_text, get_model_version
@@ -29,6 +29,7 @@ from app.schemas.team import (
     FinalizeResultResponse,
     TeamCreateRequest,
     TeamRoleCreate,
+    TeamRoleUpdate,
     TeamUpdateRequest,
 )
 from app.services import notification_service as notif
@@ -158,6 +159,20 @@ class TeamService:
             setattr(team, field, val)
 
         await db.commit()
+
+        # Keep the semantic problem vector in sync with edited content
+        if {"problem_statement", "project_idea"} & update_data.keys():
+            problem_text = " ".join(
+                part for part in (team.problem_statement, team.project_idea) if part
+            )
+            await upsert_team_problem_embedding(
+                db,
+                team_id=team.id,
+                problem_embedding=embed_text(problem_text),
+                model_version=get_model_version(),
+            )
+            await db.commit()
+
         await db.refresh(team)
         return team
 
@@ -228,6 +243,77 @@ class TeamService:
         return role
 
     @staticmethod
+    async def update_role(
+        db: AsyncSession,
+        team_id: uuid.UUID,
+        leader_id: uuid.UUID,
+        role_id: uuid.UUID,
+        req: TeamRoleUpdate,
+    ) -> TeamRole:
+        team = await TeamService.get_team_by_id(db, team_id)
+        if team.leader_id != leader_id:
+            raise ForbiddenError(message="Only the team leader can modify roles")
+
+        role = (
+            await db.execute(
+                select(TeamRole).where(
+                    TeamRole.id == role_id, TeamRole.team_id == team_id
+                )
+            )
+        ).scalar_one_or_none()
+        if not role:
+            raise NotFoundError(message="Team role not found")
+
+        update_data = req.model_dump(exclude_unset=True)
+        for field, val in update_data.items():
+            setattr(role, field, val)
+
+        if {"mandatory_skills", "preferred_skills"} & update_data.keys():
+            role.role_embedding = embed_skills(
+                list(role.mandatory_skills or []) + list(role.preferred_skills or [])
+            )
+
+        await db.commit()
+        await db.refresh(role)
+        return role
+
+    @staticmethod
+    async def delete_role(
+        db: AsyncSession, team_id: uuid.UUID, leader_id: uuid.UUID, role_id: uuid.UUID
+    ) -> None:
+        team = await TeamService.get_team_by_id(db, team_id)
+        if team.leader_id != leader_id:
+            raise ForbiddenError(message="Only the team leader can delete roles")
+
+        role = (
+            await db.execute(
+                select(TeamRole).where(
+                    TeamRole.id == role_id, TeamRole.team_id == team_id
+                )
+            )
+        ).scalar_one_or_none()
+        if not role:
+            raise NotFoundError(message="Team role not found")
+
+        reference_checks = (
+            select(TeamApplication.id).where(TeamApplication.role_id == role_id).limit(1),
+            select(TeamInvitation.id).where(TeamInvitation.role_id == role_id).limit(1),
+            select(TeamMember.id).where(TeamMember.role_id == role_id).limit(1),
+            select(ScreeningAction.id).where(ScreeningAction.role_id == role_id).limit(1),
+        )
+        for stmt in reference_checks:
+            if (await db.execute(stmt)).first() is not None:
+                raise ConflictError(
+                    message=(
+                        "Role has related applications, invitations, members, or "
+                        "screening history and cannot be deleted"
+                    )
+                )
+
+        await db.delete(role)
+        await db.commit()
+
+    @staticmethod
     async def discover_teams(
         db: AsyncSession,
         hackathon_id: Optional[uuid.UUID] = None,
@@ -248,6 +334,38 @@ class TeamService:
         conditions = []
         if hackathon_id:
             conditions.append(Team.hackathon_id == hackathon_id)
+
+        if beginner_friendly is not None:
+            conditions.append(
+                Team.id.in_(
+                    select(TeamPreference.team_id).where(
+                        TeamPreference.beginner_friendly == beginner_friendly
+                    )
+                )
+            )
+
+        if role_name or skill:
+            role_stmt = select(TeamRole)
+            if role_name:
+                role_stmt = role_stmt.where(
+                    func.lower(TeamRole.role_name).like(f"%{role_name.strip().lower()}%")
+                )
+            matching_roles = (await db.execute(role_stmt)).scalars().all()
+
+            if skill and skill.strip():
+                skill_lc = skill.strip().lower()
+
+                def _has_skill(role: TeamRole) -> bool:
+                    return any(
+                        skill_lc in (s or "").lower()
+                        for s in list(role.mandatory_skills or [])
+                        + list(role.preferred_skills or [])
+                    )
+
+                matching_roles = [r for r in matching_roles if _has_skill(r)]
+
+            team_ids = {r.team_id for r in matching_roles}
+            conditions.append(Team.id.in_(team_ids) if team_ids else false())
 
         if conditions:
             stmt = stmt.where(and_(*conditions))

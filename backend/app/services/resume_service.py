@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -25,6 +26,7 @@ from app.schemas.resume import ParsedResumeDraftSchema
 from app.services.embedding_service import refresh_candidate_embeddings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class ResumeService:
@@ -35,8 +37,7 @@ class ResumeService:
         return base_dir / f"{file_hash}.pdf"
 
     @classmethod
-    async def upload_resume(
-        cls, db: AsyncSession, user_id: uuid.UUID, file_name: str, file_bytes: bytes
+    async def upload_resume(        cls, db: AsyncSession, user_id: uuid.UUID, file_name: str, file_bytes: bytes
     ) -> UserResume:
         file_hash = hashlib.sha256(file_bytes).hexdigest()
         file_size = len(file_bytes)
@@ -60,6 +61,72 @@ class ResumeService:
         await db.commit()
         await db.refresh(resume)
         return resume
+
+    @staticmethod
+    async def list_resumes(
+        db: AsyncSession, user_id: uuid.UUID
+    ) -> list[UserResume]:
+        stmt = (
+            select(UserResume)
+            .where(
+                UserResume.user_id == user_id,
+                UserResume.deleted_at.is_(None),
+            )
+            .order_by(UserResume.created_at.desc())
+        )
+        return list((await db.execute(stmt)).scalars().all())
+
+    @staticmethod
+    async def get_resume_file(
+        db: AsyncSession, resume_id: uuid.UUID, user_id: uuid.UUID
+    ) -> UserResume:
+        stmt = select(UserResume).where(
+            UserResume.id == resume_id,
+            UserResume.user_id == user_id,
+            UserResume.deleted_at.is_(None),
+        )
+        resume = (await db.execute(stmt)).scalar_one_or_none()
+        if not resume:
+            raise NotFoundError(message="Resume document not found")
+
+        if not Path(resume.storage_key).is_file():
+            raise NotFoundError(message="Resume file is no longer available")
+        return resume
+
+    @staticmethod
+    async def delete_resume(
+        db: AsyncSession, resume_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        stmt = select(UserResume).where(
+            UserResume.id == resume_id,
+            UserResume.user_id == user_id,
+            UserResume.deleted_at.is_(None),
+        )
+        resume = (await db.execute(stmt)).scalar_one_or_none()
+        if not resume:
+            raise NotFoundError(message="Resume document not found")
+
+        resume.deleted_at = datetime.now(timezone.utc)
+        await db.commit()
+
+        # File content is deduplicated by hash; only unlink when no live row uses it
+        still_referenced = (
+            await db.execute(
+                select(UserResume.id)
+                .where(
+                    UserResume.storage_key == resume.storage_key,
+                    UserResume.deleted_at.is_(None),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if still_referenced is None:
+            path = Path(resume.storage_key)
+            if path.is_file():
+                try:
+                    path.unlink()
+                except OSError:
+                    logger.warning("Could not remove resume file %s", path)
 
     @classmethod
     async def process_resume(

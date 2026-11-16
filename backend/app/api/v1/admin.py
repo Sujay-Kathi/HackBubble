@@ -1,9 +1,12 @@
 """
 Admin API endpoints.
 
-GET  /admin/scraper/runs      — list recent scraper run summaries
-GET  /admin/hackathons        — list all hackathons with moderation status
+GET  /admin/scraper/runs       — list recent scraper runs
+GET  /admin/scraper/adapters   — list registered scraper adapter keys
+POST /admin/scraper/trigger    — run a scraper adapter on demand
+GET  /admin/hackathons         — list hackathons with moderation status
 POST /admin/hackathons/{id}/moderate — approve or reject a hackathon listing
+GET  /admin/audit-logs         — inspect privileged action history
 """
 
 from __future__ import annotations
@@ -15,30 +18,37 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
-from app.core.exceptions import ForbiddenError
-from app.models.hackathon import Hackathon, HackathonSource, HackathonSourceRecord
+from app.api.deps import get_db, require_admin
+from app.models.hackathon import Hackathon, HackathonSource, ScrapeRun
 from app.models.user import User
+from app.schemas.hackathon import IngestionReport
+from app.services import audit_service
+from app.services import delivery_service
+from app.services.hackathon_service import HackathonService
+from scraper.registry import (
+    UnknownAdapterError,
+    available_adapters,
+    get_scraper,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-def _require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Reject non-administrators from moderation endpoints."""
-    if not current_user.is_admin:
-        raise ForbiddenError(message="Administrator privileges required")
-    return current_user
-
-
 class ScraperRunSummary(BaseModel):
+    id: UUID
     source_name: str
-    total_records: int
-    earliest_scraped: datetime | None
-    latest_scraped: datetime | None
+    adapter_key: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    events_found: int
+    events_created: int
+    events_updated: int
+    error_summary: str | None = None
 
 
 class HackathonModerationOut(BaseModel):
@@ -56,34 +66,91 @@ class ModerationAction(BaseModel):
     reason: str | None = None
 
 
+class AuditLogOut(BaseModel):
+    id: UUID
+    actor_id: UUID | None = None
+    action: str
+    entity_type: str
+    entity_id: UUID | None = None
+    metadata_json: dict[str, Any]
+    ip_address: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 @router.get("/scraper/runs", response_model=list[ScraperRunSummary])
 async def list_scraper_runs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(_require_admin),
+    _admin: User = Depends(require_admin),
 ):
-    """
-    Returns a summary of ingested records per source (proxy for scraper runs).
-    """
+    """List recorded scraper runs, newest first."""
     result = await db.execute(
-        select(
-            HackathonSource.name.label("source_name"),
-            func.count(HackathonSourceRecord.id).label("total_records"),
-            func.min(HackathonSourceRecord.last_scraped_at).label("earliest_scraped"),
-            func.max(HackathonSourceRecord.last_scraped_at).label("latest_scraped"),
-        )
-        .join(HackathonSource, HackathonSource.id == HackathonSourceRecord.source_id)
-        .group_by(HackathonSource.name)
+        select(ScrapeRun, HackathonSource.name, HackathonSource.adapter_key)
+        .join(HackathonSource, HackathonSource.id == ScrapeRun.source_id)
+        .order_by(ScrapeRun.started_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
-    rows = result.all()
     return [
         ScraperRunSummary(
-            source_name=row.source_name,
-            total_records=row.total_records,
-            earliest_scraped=row.earliest_scraped,
-            latest_scraped=row.latest_scraped,
+            id=run.id,
+            source_name=source_name,
+            adapter_key=adapter_key,
+            status=run.status,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            events_found=run.events_found,
+            events_created=run.events_created,
+            events_updated=run.events_updated,
+            error_summary=run.error_summary,
         )
-        for row in rows
+        for run, source_name, adapter_key in result.all()
     ]
+
+
+@router.get("/scraper/adapters", response_model=list[str])
+async def list_scraper_adapters(_admin: User = Depends(require_admin)):
+    """List adapter keys accepted by the manual trigger endpoint."""
+    return available_adapters()
+
+
+@router.post("/scraper/trigger", response_model=IngestionReport)
+async def trigger_scraper(
+    adapter_key: str = Query(default="mock_adapter"),
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Run a registered scraper adapter and ingest its events."""
+    try:
+        scraper = get_scraper(adapter_key)
+    except UnknownAdapterError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Unknown adapter '{adapter_key}'. "
+                f"Available: {', '.join(available_adapters())}"
+            ),
+        )
+
+    report = await HackathonService.run_scraper_and_ingest(db, scraper)
+    await audit_service.log_action(
+        db,
+        actor_id=admin.id,
+        action="scraper.run",
+        entity_type="scraper_adapter",
+        metadata={
+            "adapter_key": adapter_key,
+            "status": report.status,
+            "events_found": report.events_found,
+            "events_created": report.events_created,
+            "events_updated": report.events_updated,
+        },
+    )
+    await db.commit()
+    return report
 
 
 @router.get("/hackathons", response_model=list[HackathonModerationOut])
@@ -92,7 +159,7 @@ async def list_hackathons_for_moderation(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(_require_admin),
+    _admin: User = Depends(require_admin),
 ):
     """List hackathons for admin moderation."""
     query = select(Hackathon)
@@ -118,7 +185,7 @@ async def moderate_hackathon(
     hackathon_id: UUID,
     action: ModerationAction,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(_require_admin),
+    admin: User = Depends(require_admin),
 ):
     """Approve or reject a hackathon listing."""
     if action.action not in ("approve", "reject"):
@@ -141,6 +208,43 @@ async def moderate_hackathon(
         hackathon.data_quality_status = "rejected"
         msg = f"Hackathon '{hackathon.title}' rejected."
 
+    await audit_service.log_action(
+        db,
+        actor_id=admin.id,
+        action=f"hackathon.{action.action}",
+        entity_type="hackathon",
+        entity_id=hackathon.id,
+        metadata={"reason": action.reason} if action.reason else {},
+    )
     await db.commit()
     logger.info("Admin moderation: %s hackathon_id=%s", action.action, hackathon_id)
     return {"success": True, "message": msg}
+
+
+@router.get("/notifications/deliveries", response_model=dict[str, int])
+async def notification_delivery_stats(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """Delivery queue health by status (queued, sent, skipped, failed)."""
+    return await delivery_service.delivery_stats(db)
+
+
+@router.get("/audit-logs", response_model=list[AuditLogOut])
+async def list_audit_logs(
+    action: str | None = Query(None),
+    entity_type: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """Inspect privileged action history."""
+    entries = await audit_service.list_audit_logs(
+        db,
+        action=action,
+        entity_type=entity_type,
+        limit=limit,
+        offset=offset,
+    )
+    return [AuditLogOut.model_validate(entry) for entry in entries]

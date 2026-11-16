@@ -18,6 +18,7 @@ from app.schemas.team import (
     TeamFinalizeRequest,
     TeamRoleCreate,
     TeamRoleResponse,
+    TeamRoleUpdate,
     TeamSummaryResponse,
     TeamUpdateRequest,
 )
@@ -45,12 +46,19 @@ async def discover_teams(
     hackathon_id: Optional[uuid.UUID] = Query(None),
     role_name: Optional[str] = Query(None),
     skill: Optional[str] = Query(None),
+    beginner_friendly: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
     teams, meta = await TeamService.discover_teams(
-        db, hackathon_id=hackathon_id, role_name=role_name, skill=skill, page=page, page_size=page_size
+        db,
+        hackathon_id=hackathon_id,
+        role_name=role_name,
+        skill=skill,
+        beginner_friendly=beginner_friendly,
+        page=page,
+        page_size=page_size,
     )
     return PaginatedResponse(
         success=True,
@@ -141,6 +149,33 @@ async def add_role(
         data=TeamRoleResponse.model_validate(role),
         message="Role vacancy added successfully",
     )
+
+
+@router.patch("/teams/{team_id}/roles/{role_id}", response_model=APIResponse[TeamRoleResponse])
+async def update_role(
+    team_id: uuid.UUID,
+    role_id: uuid.UUID,
+    req: TeamRoleUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    role = await TeamService.update_role(db, team_id, current_user.id, role_id, req)
+    return APIResponse(
+        success=True,
+        data=TeamRoleResponse.model_validate(role),
+        message="Role updated successfully",
+    )
+
+
+@router.delete("/teams/{team_id}/roles/{role_id}", response_model=APIResponse[None])
+async def delete_role(
+    team_id: uuid.UUID,
+    role_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await TeamService.delete_role(db, team_id, current_user.id, role_id)
+    return APIResponse(success=True, data=None, message="Role deleted successfully")
 
 
 # --- Applications Endpoints ---

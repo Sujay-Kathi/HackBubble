@@ -68,6 +68,13 @@ async def get_current_user(
     return user
 
 
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Reject non-administrators from privileged endpoints."""
+    if not current_user.is_admin:
+        raise ForbiddenError(message="Administrator privileges required")
+    return current_user
+
+
 async def get_optional_current_user(
     auth: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
     db: AsyncSession = Depends(get_db),

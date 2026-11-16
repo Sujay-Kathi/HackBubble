@@ -1,6 +1,7 @@
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
@@ -14,6 +15,7 @@ from app.schemas.resume import (
     ParsedResumeDraftSchema,
     ResumeConfirmRequest,
     ResumeStatusResponse,
+    ResumeSummaryResponse,
     ResumeUploadResponse,
 )
 from app.services.resume_service import ResumeService
@@ -43,6 +45,42 @@ async def upload_resume(
         data=ResumeUploadResponse.model_validate(resume),
         message="Resume uploaded successfully",
     )
+
+
+@router.get("", response_model=APIResponse[list[ResumeSummaryResponse]])
+async def list_resumes(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    resumes = await ResumeService.list_resumes(db, current_user.id)
+    return APIResponse(
+        success=True,
+        data=[ResumeSummaryResponse.model_validate(r) for r in resumes],
+    )
+
+
+@router.get("/{resume_id}/download")
+async def download_resume(
+    resume_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    resume = await ResumeService.get_resume_file(db, resume_id, current_user.id)
+    return FileResponse(
+        path=resume.storage_key,
+        media_type=resume.mime_type,
+        filename=resume.file_name,
+    )
+
+
+@router.delete("/{resume_id}", response_model=APIResponse[None])
+async def delete_resume(
+    resume_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await ResumeService.delete_resume(db, resume_id, current_user.id)
+    return APIResponse(success=True, data=None, message="Resume deleted successfully")
 
 
 @router.post("/{resume_id}/process", response_model=APIResponse[ResumeStatusResponse])

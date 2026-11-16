@@ -11,12 +11,13 @@ import logging
 from collections.abc import Iterable
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.embeddings.generator import embed_skills, embed_text, get_model_version
 from app.ai.embeddings.store import upsert_candidate_embedding
-from app.models.user import UserProject, UserSkill
+from app.models.resume import CandidateEmbedding
+from app.models.user import User, UserProject, UserSkill
 
 logger = logging.getLogger(__name__)
 
@@ -51,3 +52,31 @@ async def refresh_candidate_embeddings(
         project_embedding=embed_text(build_project_text(projects)),
         model_version=get_model_version(),
     )
+
+
+async def backfill_missing_embeddings(
+    db: AsyncSession, limit: int = 25
+) -> int:
+    """Recompute embeddings for candidates that have profile data but no vectors."""
+    has_skills = select(UserSkill.id).where(UserSkill.user_id == User.id).exists()
+    has_projects = select(UserProject.id).where(UserProject.user_id == User.id).exists()
+    has_embedding = (
+        select(CandidateEmbedding.id)
+        .where(CandidateEmbedding.user_id == User.id)
+        .exists()
+    )
+
+    user_ids = (
+        await db.execute(
+            select(User.id)
+            .where(or_(has_skills, has_projects), ~has_embedding)
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    for user_id in user_ids:
+        await refresh_candidate_embeddings(db, user_id)
+
+    await db.commit()
+    logger.info("Backfilled embeddings for %d candidates", len(user_ids))
+    return len(user_ids)

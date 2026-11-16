@@ -234,13 +234,39 @@ class HackathonService:
         if conditions:
             stmt = stmt.where(and_(*conditions))
 
+        order_clause = (
+            Hackathon.registration_deadline.asc().nulls_last(),
+            Hackathon.created_at.desc(),
+        )
+
+        # Theme lives in a JSON array, so filter in Python for dialect portability.
+        if theme and theme.strip():
+            theme_lc = theme.strip().lower()
+            matching = [
+                h
+                for h in (await db.execute(stmt.order_by(*order_clause))).scalars().all()
+                if any(theme_lc in (t or "").lower() for t in (h.themes or []))
+            ]
+            offset = (page - 1) * page_size
+            total_items = len(matching)
+            total_pages = (total_items + page_size - 1) // page_size if total_items > 0 else 1
+            meta = PaginationMeta(
+                page=page,
+                page_size=page_size,
+                total_items=total_items,
+                total_pages=total_pages,
+                has_next=page < total_pages,
+                has_prev=page > 1,
+            )
+            return matching[offset : offset + page_size], meta
+
         # Total count query
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total_items = (await db.execute(count_stmt)).scalar() or 0
 
         # Pagination & sorting
         offset = (page - 1) * page_size
-        stmt = stmt.order_by(Hackathon.registration_deadline.asc().nulls_last(), Hackathon.created_at.desc())
+        stmt = stmt.order_by(*order_clause)
         stmt = stmt.offset(offset).limit(page_size)
 
         hackathons = (await db.execute(stmt)).scalars().all()

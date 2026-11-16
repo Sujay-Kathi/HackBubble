@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.workers import scheduler
 
 settings = get_settings()
 
@@ -19,8 +21,12 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup actions
+    if settings.WORKERS_ENABLED:
+        scheduler.start_workers()
     yield
     # Shutdown actions
+    if settings.WORKERS_ENABLED:
+        await scheduler.stop_workers()
 
 
 def create_application() -> FastAPI:
@@ -33,6 +39,14 @@ def create_application() -> FastAPI:
         openapi_url="/openapi.json",
         lifespan=lifespan,
     )
+
+    # Rate limiting (added before CORS so CORS remains the outermost layer)
+    if settings.RATE_LIMIT_ENABLED:
+        app.add_middleware(
+            RateLimitMiddleware,
+            max_requests=settings.RATE_LIMIT_REQUESTS,
+            window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
+        )
 
     # CORS configuration
     app.add_middleware(

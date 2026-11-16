@@ -147,9 +147,24 @@ This document records the architectural decisions, system milestones, state mach
 
 ---
 
+### Phase 8: Ops Completion — Filters, Delivery, Workers & Hardening (Completed ✅)
+- **Date Completed:** 16 November 2026
+- **Accomplishments:**
+  1. Completed catalog/team discovery filters: hackathon `theme` filtering, plus team `role_name`, `skill`, and `beginner_friendly` filters (empty result sets are handled correctly).
+  2. Added full role lifecycle management: `PATCH /teams/{team_id}/roles/{role_id}` and `DELETE /teams/{team_id}/roles/{role_id}` (leader-only, embeddings regenerated on skill edits, deletion blocked when applications/invitations/members/screening history reference the role). Team problem embeddings are now refreshed whenever `problem_statement`/`project_idea` change.
+  3. Added a scraper adapter registry (`scraper/registry.py`) with `list-adapters`, admin-only `POST /admin/scraper/trigger`, and an admin-only legacy `POST /hackathons/admin/scrape-trigger`. Admin scraper runs now return real `ScrapeRun` rows.
+  4. Added audit logging (`app/services/audit_service.py`): moderation and scraper actions write `audit_logs`, exposed via `GET /admin/audit-logs`.
+  5. Added notification delivery: every in-app notification queues a `NotificationDelivery` email row; the dispatcher sends over SMTP via `asyncio.to_thread`, marks deliveries `skipped` when SMTP is unconfigured, and exposes health at `GET /admin/notifications/deliveries`.
+  6. Added background workers (`app/workers/scheduler.py`): notification drain, scheduled crawls respecting `HackathonSource.crawl_interval_hours`, and embedding backfills, started from the app lifespan when `WORKERS_ENABLED=true`.
+  7. Added an ops CLI (`python -m app.cli promote-admin|demote-admin|run-scraper|list-adapters`) and config-gated in-memory rate-limit middleware.
+  8. Completed resume document management: `GET /profiles/me/resumes`, `GET /profiles/me/resumes/{id}/download`, and `DELETE /profiles/me/resumes/{id}` (soft delete with deduplicated file cleanup).
+  9. Added `tests/unit/test_backend_completion.py` (17 tests) covering filters, role lifecycle, registry, audit logs, delivery queue/dispatch, workers, CLI, rate limiting, and resume storage.
+
+---
+
 ## 4. Test Suite Status
-- **Total:** 54 tests, 54 passing (`pytest` against SQLite with pgvector compiled to TEXT).
-- Suites: health/core, auth/profiles, hackathons/scraper, team formation, resume/AI, matching (unit + integration), notifications/admin.
+- **Total:** 71 tests, 71 passing (`pytest` against SQLite with pgvector compiled to TEXT).
+- Suites: health/core, auth/profiles, hackathons/scraper, team formation, resume/AI, matching (unit + integration), notifications/admin, backend completion.
 - Alembic chain: `001_initial_schema` $\rightarrow$ `002_hackathon_is_verified` $\rightarrow$ `003_user_is_admin`.
 
 ---
@@ -166,7 +181,6 @@ This document records the architectural decisions, system milestones, state mach
 
 ## 6. Roadmap / Not Yet Implemented
 - **Frontend application** (candidate swipe/screening UI, team dashboard, catalog) — repository is currently backend + scraper only.
-- **Background workers/scheduler** (`app/workers/`) for periodic crawling, retries, and embedding backfills. Scrapes are currently triggered on demand.
-- **External notification delivery** (email/push) — `NotificationDelivery` exists but only in-app notifications are produced.
-- **Admin bootstrap tooling** — promote an account with `UPDATE users SET is_admin = true WHERE email = '...'` until an ops CLI exists.
-- **Additional source adapters** beyond Mock/Devfolio, plus rate limiting and refresh-token rotation for production hardening.
+- **Additional source adapters** beyond Mock/Devfolio, plus refresh-token rotation for production hardening.
+- **Shared rate-limit store** — the current limiter is in-memory and per-process; use Redis when running multiple replicas.
+- **Push/mobile notification delivery** — only email is implemented; `NotificationDelivery` supports additional providers.

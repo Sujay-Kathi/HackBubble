@@ -416,7 +416,9 @@ async def test_admin_moderation_flow(async_client: AsyncClient, test_db):
 
     runs = await async_client.get("/api/v1/admin/scraper/runs", headers=headers)
     assert runs.status_code == 200
-    assert runs.json()[0]["total_records"] == 2
+    assert runs.json()[0]["events_found"] == 2
+    assert runs.json()[0]["status"] == "completed"
+    assert runs.json()[0]["adapter_key"] == "mock_adapter"
 
     listing = await async_client.get("/api/v1/admin/hackathons", headers=headers)
     assert listing.status_code == 200

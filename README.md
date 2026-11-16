@@ -26,8 +26,9 @@
 | 5 | Resume upload, PyMuPDF/OCR, LLM extraction, grounded summaries | ✅ Complete |
 | 6 | Vector embeddings, hybrid explainable matching, candidate queues | ✅ Complete |
 | 7 | Notifications, admin moderation, Docker & production readiness | ✅ Complete |
+| 8 | Filters, role lifecycle, audit logs, email delivery, workers, CLI, rate limiting, resume storage | ✅ Complete |
 
-**Tests:** 54 passing (`cd backend && pytest`). Full phase history lives in [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md).
+**Tests:** 71 passing (`cd backend && pytest`). Full phase history lives in [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md).
 
 ---
 
@@ -69,6 +70,8 @@ uv venv
 .venv\Scripts\activate
 # Install dependencies:
 uv pip install -e .
+# Configure environment (copy and edit as needed)
+cp .env.example .env
 ```
 
 ### 3. Run Development Server
@@ -88,6 +91,18 @@ pytest
 docker compose up --build
 ```
 The backend runs `alembic upgrade head` automatically before starting. Promote an admin account after registering:
-```sql
-UPDATE users SET is_admin = true WHERE email = 'you@example.com';
+```bash
+cd backend
+python -m app.cli promote-admin --email you@example.com
 ```
+
+### 6. Operational Features
+```bash
+# Run a scraper adapter once (registered keys: mock_adapter, devfolio)
+python -m app.cli run-scraper --adapter mock_adapter
+python -m app.cli list-adapters
+```
+- **Background workers:** set `WORKERS_ENABLED=true` to run notification delivery, scheduled crawls, and embedding backfills inside the API process.
+- **Email delivery:** configure `SMTP_HOST` (and credentials) to send notification emails; unconfigured SMTP marks deliveries as `skipped`.
+- **Rate limiting:** set `RATE_LIMIT_ENABLED=true` for per-process in-memory limiting.
+- **Admin APIs:** `/api/v1/admin/scraper/runs`, `/api/v1/admin/scraper/trigger`, `/api/v1/admin/audit-logs`, `/api/v1/admin/notifications/deliveries`.

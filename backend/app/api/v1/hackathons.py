@@ -1,8 +1,8 @@
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_current_user, get_optional_current_user
+from app.api.deps import get_current_user, get_optional_current_user, require_admin
 from app.database.session import get_db
 from app.models.user import User
 from app.schemas.common import APIResponse, PaginatedResponse
@@ -13,8 +13,11 @@ from app.schemas.hackathon import (
     SavedHackathonResponse,
 )
 from app.services.hackathon_service import HackathonService
-from scraper.sources.devfolio import DevfolioScraper
-from scraper.sources.mock import MockHackathonScraper
+from scraper.registry import (
+    UnknownAdapterError,
+    available_adapters,
+    get_scraper,
+)
 
 router = APIRouter(prefix="/hackathons", tags=["Hackathons"])
 
@@ -119,14 +122,20 @@ async def remove_bookmark(
 
 @router.post("/admin/scrape-trigger", response_model=APIResponse[IngestionReport])
 async def trigger_scraper(
-    adapter_key: str = Query(default="mock_adapter", description="mock_adapter | devfolio"),
-    current_user: User = Depends(get_current_user),
+    adapter_key: str = Query(default="mock_adapter", description="Registered adapter key"),
+    _admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    if adapter_key == "devfolio":
-        scraper = DevfolioScraper()
-    else:
-        scraper = MockHackathonScraper()
+    try:
+        scraper = get_scraper(adapter_key)
+    except UnknownAdapterError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Unknown adapter '{adapter_key}'. "
+                f"Available: {', '.join(available_adapters())}"
+            ),
+        )
 
     report = await HackathonService.run_scraper_and_ingest(db, scraper)
     return APIResponse(

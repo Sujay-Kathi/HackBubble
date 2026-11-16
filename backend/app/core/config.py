@@ -47,6 +47,27 @@ class Settings(BaseSettings):
     SCRAPER_USER_AGENT: str = "HackBubble-Bot/1.0 (+https://github.com/Sujay-Kathi/HackBubble)"
     SCRAPER_CONCURRENCY: int = 3
 
+    # Email delivery (SMTP)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "notifications@hackbubble.local"
+    SMTP_USE_TLS: bool = True
+    SMTP_TIMEOUT_SECONDS: int = 10
+
+    # Background workers
+    WORKERS_ENABLED: bool = False
+    WORKER_DISPATCH_INTERVAL_SECONDS: int = 30
+    WORKER_SCRAPE_INTERVAL_SECONDS: int = 900
+    WORKER_EMBEDDING_BACKFILL_INTERVAL_SECONDS: int = 3600
+    WORKER_BATCH_SIZE: int = 50
+
+    # Rate limiting (in-memory, per-process)
+    RATE_LIMIT_ENABLED: bool = False
+    RATE_LIMIT_REQUESTS: int = 120
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+
 
 @lru_cache
 def get_settings() -> Settings:

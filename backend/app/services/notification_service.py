@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
+from app.services import delivery_service
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,11 @@ async def create_notification(
     body: str,
     entity_type: str = "system",
     entity_id: UUID | None = None,
+    enqueue_email: bool = True,
 ) -> Notification:
     """
-    Persist a single in-app notification. Caller must commit.
+    Persist a single in-app notification and queue its email delivery.
+    Caller must commit.
     """
     notif = Notification(
         user_id=user_id,
@@ -49,6 +52,10 @@ async def create_notification(
     )
     db.add(notif)
     await db.flush()
+
+    if enqueue_email:
+        await delivery_service.queue_email_delivery(db, notif)
+
     logger.info("Created notification type=%s for user=%s", notif_type, user_id)
     return notif
 
