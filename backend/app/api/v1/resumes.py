@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from app.schemas.resume import (
     ResumeUploadResponse,
 )
 from app.services.resume_service import ResumeService
+from app.services.storage_service import get_storage_provider
 
 router = APIRouter(prefix="/profiles/me/resumes", tags=["Resumes & Candidate Intelligence"])
 
@@ -66,10 +67,20 @@ async def download_resume(
     db: AsyncSession = Depends(get_db),
 ):
     resume = await ResumeService.get_resume_file(db, resume_id, current_user.id)
-    return FileResponse(
-        path=resume.storage_key,
+    storage = get_storage_provider()
+    local_path = storage.get_local_path(resume.storage_key)
+    if local_path is not None:
+        return FileResponse(
+            path=str(local_path),
+            media_type=resume.mime_type,
+            filename=resume.file_name,
+        )
+
+    file_bytes = await storage.get_file_bytes(resume.storage_key)
+    return Response(
+        content=file_bytes,
         media_type=resume.mime_type,
-        filename=resume.file_name,
+        headers={"Content-Disposition": f'attachment; filename="{resume.file_name}"'},
     )
 
 

@@ -24,33 +24,27 @@ from app.models.user import (
 )
 from app.schemas.resume import ParsedResumeDraftSchema
 from app.services.embedding_service import refresh_candidate_embeddings
+from app.services.storage_service import get_storage_provider
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
 class ResumeService:
-    @staticmethod
-    def _get_storage_path(user_id: uuid.UUID, file_hash: str) -> Path:
-        base_dir = Path(settings.LOCAL_STORAGE_DIR) / str(user_id)
-        base_dir.mkdir(parents=True, exist_ok=True)
-        return base_dir / f"{file_hash}.pdf"
-
     @classmethod
-    async def upload_resume(        cls, db: AsyncSession, user_id: uuid.UUID, file_name: str, file_bytes: bytes
+    async def upload_resume(
+        cls, db: AsyncSession, user_id: uuid.UUID, file_name: str, file_bytes: bytes
     ) -> UserResume:
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
         file_size = len(file_bytes)
 
-        # Save to private storage
-        storage_path = cls._get_storage_path(user_id, file_hash)
-        with open(storage_path, "wb") as f:
-            f.write(file_bytes)
+        # Save to active storage provider (local directory or Supabase bucket)
+        storage = get_storage_provider()
+        storage_key, file_hash = await storage.save_file(user_id, file_name, file_bytes)
 
         resume = UserResume(
             id=uuid.uuid4(),
             user_id=user_id,
-            storage_key=str(storage_path),
+            storage_key=storage_key,
             file_name=file_name,
             file_hash=file_hash,
             file_size_bytes=file_size,
@@ -89,7 +83,8 @@ class ResumeService:
         if not resume:
             raise NotFoundError(message="Resume document not found")
 
-        if not Path(resume.storage_key).is_file():
+        storage = get_storage_provider()
+        if not await storage.file_exists(resume.storage_key):
             raise NotFoundError(message="Resume file is no longer available")
         return resume
 
@@ -121,12 +116,8 @@ class ResumeService:
             )
         ).scalar_one_or_none()
         if still_referenced is None:
-            path = Path(resume.storage_key)
-            if path.is_file():
-                try:
-                    path.unlink()
-                except OSError:
-                    logger.warning("Could not remove resume file %s", path)
+            storage = get_storage_provider()
+            await storage.delete_file(resume.storage_key)
 
     @classmethod
     async def process_resume(
@@ -143,9 +134,9 @@ class ResumeService:
         await db.commit()
 
         try:
-            # 1. Read file bytes
-            with open(resume.storage_key, "rb") as f:
-                file_bytes = f.read()
+            # 1. Read file bytes via storage provider
+            storage = get_storage_provider()
+            file_bytes = await storage.get_file_bytes(resume.storage_key)
 
             # 2. Extract text with PyMuPDF
             raw_text, needs_ocr = ResumeTextExtractor.extract_text_from_bytes(file_bytes)

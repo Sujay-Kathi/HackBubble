@@ -91,9 +91,15 @@ def main(argv: list[str] | None = None) -> int:
     scrape.add_argument("--adapter", default="mock_adapter")
 
     subparsers.add_parser("list-adapters", help="List registered adapter keys")
+    subparsers.add_parser("seed", help="Seed database with baseline sources and fixtures")
 
     args = parser.parse_args(argv)
 
+    if args.command == "seed":
+        from app.database.seed import seed_database
+        report = asyncio.run(seed_database())
+        print(f"Database seeded successfully: {report}")
+        return 0
     if args.command == "list-adapters":
         print("\n".join(available_adapters()))
         return 0
