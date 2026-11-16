@@ -107,6 +107,18 @@ This document records the architectural decisions, system milestones, state mach
 
 ---
 
+### Phase 5: Candidate Intelligence & Resume Processing Subsystem (Completed ✅)
+- **Date Completed:** 16 November 2026
+- **Accomplishments:**
+  1. Implemented private resume upload pipeline (`POST /api/v1/profiles/me/resumes`) with SHA-256 deduplication and 10MB file limit enforcement.
+  2. Implemented PyMuPDF text extractor (`ResumeTextExtractor`) with automatic heuristic quality detection triggering OCR fallback for scanned/low-yield PDFs.
+  3. Built schema-constrained LLM structured extraction service (`LLMResumeParser`) parsing raw text into strict `ParsedResumeDraftSchema` (education, skills, domains, experience, projects, achievements) with intelligent offline heuristic fallback.
+  4. Built mandatory human-in-the-loop review workflow (`GET /profiles/me/resumes/{id}/draft` and `POST /profiles/me/resumes/{id}/confirm`), committing user-verified claims into profile tables (`user_skills`, `user_projects`, `user_experience`, `user_achievements`).
+  5. Built grounded summarizer (`GroundedSummarizer`) creating concise, unhallucinated profile and project summaries labeled as `[AI-Generated Summary]` and stored in `CandidateIntelligence`.
+  6. Added tests in `tests/unit/test_resume_and_ai.py` verifying PDF text extraction, structured extraction, grounded summary generation, and the complete upload $\rightarrow$ parse $\rightarrow$ draft $\rightarrow$ confirm workflow (16/16 tests passing).
+
+---
+
 ## 4. Key Architectural & Business Rules
 1. **Contextual Roles:** Users do not have fixed global participant/leader roles. Any user can be a team leader for team X while being a participant applying to team Y.
 2. **Two-Sided Recruitment:** A candidate is never an official team member merely because a leader shortlists them or the candidate accepts an invitation.

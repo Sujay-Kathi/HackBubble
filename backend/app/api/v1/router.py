@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.auth import router as auth_router
 from app.api.v1.hackathons import router as hackathons_router
 from app.api.v1.profiles import router as profiles_router
+from app.api.v1.resumes import router as resumes_router
 from app.api.v1.teams import router as teams_router
 from app.core.config import get_settings
 from app.database.session import get_db
@@ -16,6 +17,7 @@ api_router = APIRouter()
 # Register sub-routers
 api_router.include_router(auth_router)
 api_router.include_router(profiles_router)
+api_router.include_router(resumes_router)
 api_router.include_router(hackathons_router)
 api_router.include_router(teams_router)
 
