@@ -93,6 +93,20 @@ This document records the architectural decisions, system milestones, state mach
 
 ---
 
+### Phase 4: Team Formation Core & Application / Screening State Machine (Completed ✅)
+- **Date Completed:** 16 November 2026
+- **Accomplishments:**
+  1. Built complete team lifecycle models and transitions: `draft` $\rightarrow$ `open` $\rightarrow$ `paused` $\rightarrow$ `full` $\rightarrow$ `closed` $\rightarrow$ `cancelled`.
+  2. Implemented role vacancy management (`TeamRole`) capturing mandatory skills, preferred skills, priority, and capacity counts.
+  3. Built team discovery endpoint (`GET /api/v1/teams/discover`) with filtering by hackathon, role, and skills.
+  4. Implemented participant application lifecycle (`TeamApplication`) with duplicate prevention and withdrawal safeguards (`POST /api/v1/teams/{id}/applications`, `POST /api/v1/applications/{id}/withdraw`, `GET /api/v1/applications/me`).
+  5. Implemented leader candidate screening workflow (`POST /api/v1/teams/{id}/screening-actions`) persisting swipe actions (`shortlist`, `reject`, `revisit`) with multi-pass support.
+  6. Implemented invitation response workflow (`POST /api/v1/teams/{id}/invitations/{id}/respond`) verifying candidate acceptance marks interest without premature membership assignment.
+  7. Implemented pessimistic concurrency-safe finalization transaction (`POST /api/v1/teams/{id}/finalize`) with `with_for_update()` row locking, capacity checks, atomic `TeamMember` creation, role vacancy decrements, and automatic status transition to `full`.
+  8. Added integration test in `tests/unit/test_team_formation.py` verifying the full end-to-end team formation lifecycle (13/13 tests passing).
+
+---
+
 ## 4. Key Architectural & Business Rules
 1. **Contextual Roles:** Users do not have fixed global participant/leader roles. Any user can be a team leader for team X while being a participant applying to team Y.
 2. **Two-Sided Recruitment:** A candidate is never an official team member merely because a leader shortlists them or the candidate accepts an invitation.
