@@ -55,6 +55,11 @@ htmlcov/
 *.sqlite
 *.sqlite3
 
+# Node / Frontend
+node_modules/
+dist/
+.pnpm-debug.log*
+
 # Temporary docs extraction
 docs/extracted/
 
