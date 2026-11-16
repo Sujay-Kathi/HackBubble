@@ -45,6 +45,7 @@ class HackathonSummaryResponse(BaseModel):
     prize_pool_currency: Optional[str] = None
     status: str
     created_at: datetime
+    image_url: Optional[str] = None
 
 
 class HackathonDetailResponse(HackathonSummaryResponse):
@@ -55,6 +56,7 @@ class HackathonDetailResponse(HackathonSummaryResponse):
     last_verified_at: Optional[datetime] = None
     data_quality_status: str
     is_bookmarked: bool = False
+    image_url: Optional[str] = None
 
 
 class SavedHackathonResponse(BaseModel):

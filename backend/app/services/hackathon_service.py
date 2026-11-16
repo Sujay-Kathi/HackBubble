@@ -89,6 +89,8 @@ class HackathonService:
                     existing_hackathon.status = event_data["status"]
                     existing_hackathon.last_scraped_at = datetime.now(timezone.utc)
                     existing_hackathon.last_verified_at = datetime.now(timezone.utc)
+                    if event_data.get("image_url"):
+                        existing_hackathon.image_url = event_data["image_url"]
                     events_updated += 1
                 else:
                     # Create new Hackathon
@@ -117,6 +119,7 @@ class HackathonService:
                         last_scraped_at=now,
                         last_verified_at=now,
                         data_quality_status=event_data["data_quality_status"],
+                        image_url=event_data.get("image_url"),
                     )
                     db.add(new_hackathon)
 
