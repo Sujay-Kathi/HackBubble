@@ -3,7 +3,7 @@ import { X, Sparkles, ArrowRight, ShieldCheck, Mail, Lock, User as UserIcon } fr
 import { useApp } from '../context/AppContext';
 
 export const AuthModal: React.FC = () => {
-  const { authModalOpen, setAuthModalOpen, userProfile, updateUserProfile } = useApp();
+  const { authModalOpen, setAuthModalOpen, userProfile, updateUserProfile, login, register } = useApp();
   const [step, setStep] = useState<'welcome' | 'form' | 'verify'>('welcome');
   const [isSignUp, setIsSignUp] = useState<boolean>(true);
   const [name, setName] = useState<string>(userProfile.name);
@@ -13,7 +13,16 @@ export const AuthModal: React.FC = () => {
 
   if (!authModalOpen) return null;
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
+    try {
+      if (isSignUp) {
+        await register(email, password, name);
+      } else {
+        await login(email, password);
+      }
+    } catch (e) {
+      console.error(e);
+    }
     updateUserProfile({ name, email });
     setAuthModalOpen(false);
     setStep('welcome');

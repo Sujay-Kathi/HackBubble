@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
+import { api } from '../services/api';
 import {
   Hackathon,
   Candidate,
@@ -23,6 +24,8 @@ interface AppContextType {
   // Navigation & View
   activeTab: 'home' | 'discover' | 'create' | 'my-teams' | 'profile';
   setActiveTab: (tab: 'home' | 'discover' | 'create' | 'my-teams' | 'profile') => void;
+  currentScreen: string;
+  setCurrentScreen: (screen: string) => void;
   selectedHackathonId: string | null;
   setSelectedHackathonId: (id: string | null) => void;
   selectedTeamId: string | null;
@@ -68,6 +71,10 @@ interface AppContextType {
   markNotifAsRead: (id: string) => void;
   markAllNotifsAsRead: () => void;
 
+  // Auth
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, name: string) => Promise<void>;
+
   // User Profile & Resume
   userProfile: UserProfile;
   updateUserProfile: (data: Partial<UserProfile>) => void;
@@ -80,6 +87,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Navigation & Shell
   const [activeTab, setActiveTab] = useState<'home' | 'discover' | 'create' | 'my-teams' | 'profile'>('home');
+  const [currentScreen, setCurrentScreen] = useState<string>('welcome');
   const [selectedHackathonId, setSelectedHackathonId] = useState<string | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [screeningTeamId, setScreeningTeamId] = useState<string>('team-golt');
@@ -140,6 +148,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('hb_hackathons', JSON.stringify(hackathons));
   }, [hackathons]);
 
+  // Load hackathons from backend
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.hackathons();
+        const items = res?.data || [];
+        const mapped = items.map((h: any) => ({
+          id: h.id,
+          title: h.title,
+          organizer: h.organizer || 'Unknown',
+          description: h.description || '',
+          mode: h.mode || 'online',
+          location: h.location,
+          startDate: h.start_date || new Date().toISOString(),
+          endDate: h.end_date || new Date().toISOString(),
+          registrationDeadline: h.registration_deadline || new Date().toISOString(),
+          daysLeft: h.registration_deadline ? Math.max(0, Math.ceil((new Date(h.registration_deadline).getTime() - Date.now()) / 86400000)) : 0,
+          prizePool: h.prize_pool_amount ? `${h.prize_pool_currency || 'USD'} ${h.prize_pool_amount}` : '',
+          themes: h.themes || [],
+          teamSizeLimit: '2-6',
+          sourceName: h.source_name,
+          sourceUrl: h.event_url,
+          isSaved: h.is_bookmarked || false,
+          status: (h.status === 'registration_open' ? 'registration_open' : (h.status === 'upcoming' ? 'upcoming' : (h.status === 'ongoing' ? 'ongoing' : 'closed'))) as any,
+          materials: [],
+          timeline: [],
+        }));
+        if (mapped.length > 0) setHackathons(mapped);
+      } catch (e) {
+        console.warn('Failed to load hackathons from backend', e);
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('hb_active_candidates', JSON.stringify(activeCandidates));
     localStorage.setItem('hb_passed_candidates', JSON.stringify(passedCandidates));
@@ -165,6 +207,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('hb_user_profile', JSON.stringify(userProfile));
   }, [userProfile]);
+
+  // Auth
+  const login = async (email: string, password: string) => {
+    const res = await api.login(email, password);
+    localStorage.setItem('hb_token', res.data.access_token);
+    updateUserProfile({ name: res.data.display_name || email, email });
+  };
+  const register = async (email: string, password: string, name: string) => {
+    const res = await api.register(email, password, name);
+    localStorage.setItem('hb_token', res.data.access_token);
+    updateUserProfile({ name, email });
+  };
 
   // Hackathon actions
   const toggleBookmark = (id: string) => {
@@ -447,6 +501,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         activeTab,
         setActiveTab,
+        currentScreen,
+        setCurrentScreen,
         selectedHackathonId,
         setSelectedHackathonId,
         selectedTeamId,
@@ -483,6 +539,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markAllNotifsAsRead,
         userProfile,
         updateUserProfile,
+        login,
+        register,
         uploadResumeMock,
         confirmResumeMock,
       }}

@@ -27,7 +27,7 @@ export const DeviceFrame: React.FC<DeviceFrameProps> = ({ children }) => {
       </div>
 
       {/* The Phone Bezel */}
-      <div className="relative w-full max-w-[420px] h-[880px] max-h-[96vh] bg-stone-950 rounded-[44px] p-3 shadow-2xl border-[5px] border-stone-800 ring-1 ring-stone-700/50 flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-[420px] h-[880px] max-h-[96vh] bg-[#2B3A2E] rounded-[44px] p-[8px] shadow-2xl ring-1 ring-stone-700/50 flex flex-col overflow-hidden">
         {/* Dynamic Island / Speaker Notch */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 h-5 bg-stone-950 rounded-full z-40 flex items-center justify-end px-3">
           <div className="w-2.5 h-2.5 rounded-full bg-stone-900 border border-stone-800"></div>
@@ -44,7 +44,7 @@ export const DeviceFrame: React.FC<DeviceFrameProps> = ({ children }) => {
         </div>
 
         {/* Screen Content */}
-        <div className="flex-1 bg-bubble-cream overflow-y-auto overflow-x-hidden relative flex flex-col rounded-b-[36px] no-overscroll">
+        <div className="flex-1 bg-[#FEFAF3] overflow-y-auto overflow-x-hidden relative flex flex-col rounded-b-[36px] no-overscroll">
           {children}
         </div>
       </div>
