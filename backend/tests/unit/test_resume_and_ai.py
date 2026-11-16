@@ -1,4 +1,6 @@
 import io
+import uuid
+
 import pymupdf
 import pytest
 from httpx import AsyncClient
@@ -54,12 +56,13 @@ async def test_llm_structured_extraction():
 
 
 @pytest.mark.asyncio
-async def test_resume_upload_process_and_confirm_flow(async_client: AsyncClient):
+async def test_resume_upload_process_and_confirm_flow(async_client: AsyncClient, test_db):
     # 1. Register candidate
     reg = await async_client.post(
         "/api/v1/auth/register",
         json={"email": "resume_user@example.com", "password": "password123", "display_name": "Alex Rivera"},
     )
+    user_id = reg.json()["data"]["user_id"]
     token = reg.json()["data"]["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -112,3 +115,20 @@ async def test_resume_upload_process_and_confirm_flow(async_client: AsyncClient)
     intel_resp = await async_client.get("/api/v1/profiles/me/resumes/intelligence", headers=headers)
     assert intel_resp.status_code == 200
     assert intel_resp.json()["data"]["profile_summary"] == intel["profile_summary"]
+
+    # 8. Confirmation persisted the semantic vectors used by the matching engine
+    from sqlalchemy import select
+    from app.models.resume import CandidateEmbedding
+
+    embedding_rows = (
+        await test_db.execute(
+            select(CandidateEmbedding).where(
+                CandidateEmbedding.user_id == uuid.UUID(user_id)
+            )
+        )
+    ).scalars().all()
+    by_type = {row.embedding_type: row for row in embedding_rows}
+    assert set(by_type) == {"skills", "projects"}
+    assert len(by_type["skills"].vector) == 384
+    assert len(by_type["projects"].vector) == 384
+    assert by_type["skills"].model_version

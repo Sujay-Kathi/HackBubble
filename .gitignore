@@ -57,3 +57,6 @@ htmlcov/
 
 # Temporary docs extraction
 docs/extracted/
+
+# Runtime uploads (test/dev resume PDFs)
+backend/uploads/

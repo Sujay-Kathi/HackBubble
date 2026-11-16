@@ -20,6 +20,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     auth_subject: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     account_status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     profile: Mapped[Optional["UserProfile"]] = relationship(

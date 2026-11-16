@@ -31,6 +31,7 @@ from app.schemas.user import (
     UserSkillResponse,
     UserSkillUpdate,
 )
+from app.services.embedding_service import refresh_candidate_embeddings
 
 router = APIRouter(prefix="/profiles", tags=["User Profiles"])
 
@@ -130,6 +131,9 @@ async def add_skill(
     await db.commit()
     await db.refresh(skill)
 
+    await refresh_candidate_embeddings(db, current_user.id)
+    await db.commit()
+
     return APIResponse(
         success=True,
         data=UserSkillResponse.model_validate(skill),
@@ -178,6 +182,9 @@ async def delete_skill(
     await db.delete(skill)
     await db.commit()
 
+    await refresh_candidate_embeddings(db, current_user.id)
+    await db.commit()
+
     return APIResponse(success=True, data=None, message="Skill removed successfully")
 
 
@@ -203,6 +210,9 @@ async def add_project(
     db.add(project)
     await db.commit()
     await db.refresh(project)
+
+    await refresh_candidate_embeddings(db, current_user.id)
+    await db.commit()
 
     return APIResponse(
         success=True,
@@ -230,6 +240,9 @@ async def update_project(
     await db.commit()
     await db.refresh(project)
 
+    await refresh_candidate_embeddings(db, current_user.id)
+    await db.commit()
+
     return APIResponse(
         success=True,
         data=UserProjectResponse.model_validate(project),
@@ -249,6 +262,9 @@ async def delete_project(
         raise NotFoundError(message="Project not found")
 
     await db.delete(project)
+    await db.commit()
+
+    await refresh_candidate_embeddings(db, current_user.id)
     await db.commit()
 
     return APIResponse(success=True, data=None, message="Project removed successfully")

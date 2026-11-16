@@ -15,6 +15,22 @@
 
 ---
 
+## 📊 Project Status
+
+| Phase | Scope | Status |
+| :--- | :--- | :--- |
+| 1 | Environment, database models, Alembic, core API | ✅ Complete |
+| 2 | Authentication, JWT authorization, profile management | ✅ Complete |
+| 3 | Hackathon aggregation, deduplication, catalog & bookmarks | ✅ Complete |
+| 4 | Team formation, applications, screening, invitations, finalization | ✅ Complete |
+| 5 | Resume upload, PyMuPDF/OCR, LLM extraction, grounded summaries | ✅ Complete |
+| 6 | Vector embeddings, hybrid explainable matching, candidate queues | ✅ Complete |
+| 7 | Notifications, admin moderation, Docker & production readiness | ✅ Complete |
+
+**Tests:** 54 passing (`cd backend && pytest`). Full phase history lives in [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md).
+
+---
+
 ## 🚀 Architecture & Modules
 
 ```
@@ -60,3 +76,18 @@ uv pip install -e .
 uvicorn app.main:app --reload --port 8000
 ```
 API Documentation will be available at `http://localhost:8000/docs`.
+
+### 4. Run Tests
+```bash
+cd backend
+pytest
+```
+
+### 5. Docker (PostgreSQL + Backend)
+```bash
+docker compose up --build
+```
+The backend runs `alembic upgrade head` automatically before starting. Promote an admin account after registering:
+```sql
+UPDATE users SET is_admin = true WHERE email = 'you@example.com';
+```

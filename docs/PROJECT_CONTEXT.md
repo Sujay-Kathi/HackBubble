@@ -119,17 +119,54 @@ This document records the architectural decisions, system milestones, state mach
 
 ---
 
-## 4. Key Architectural & Business Rules
+### Phase 6: Vector Embeddings & Hybrid Matching Engine (Completed ✅)
+- **Date Completed:** 16 November 2026
+- **Accomplishments:**
+  1. Implemented `all-MiniLM-L6-v2` (384-dim) embedding generation with batch support, pure-Python cosine similarity, and a deterministic hash-based fallback for environments without the model.
+  2. Built vector persistence in `app/ai/embeddings/store.py`:
+     - `CandidateEmbedding` rows per embedding type (`skills`, `projects`) with model versioning.
+     - `TeamIntelligence.problem_embedding` upserted from the team's problem statement and project idea.
+     - `TeamRole.role_embedding` generated from mandatory + preferred skills.
+  3. Kept vectors fresh: resume confirmation and profile skill/project mutations recompute candidate embeddings via `EmbeddingService.refresh_candidate_embeddings`.
+  4. Built the hybrid scoring engine (`app/ai/matching/engine.py`) with a 1.0 total score: 30% role-skill overlap, 25% semantic skill similarity, 25% project/problem similarity, 10% experience ladder distance, 10% domain/theme preference overlap.
+  5. Built the explainability layer (`explainer.py`) returning per-component score/weight/weighted value/label plus grounded reasons for every candidate.
+  6. Exposed `GET /api/v1/teams/{team_id}/candidates` and `GET /api/v1/teams/{team_id}/candidates/{user_id}`, restricted to the team leader and active members.
+  7. Added `tests/unit/test_matching.py` and `tests/unit/test_matching_integration.py` (27/27 tests passing), covering vector generation, score weights, ranking, role-scoped queues, access control, and embedding refresh.
+
+---
+
+### Phase 7: Notifications, Admin Moderation & Production Readiness (Completed ✅)
+- **Date Completed:** 16 November 2026
+- **Accomplishments:**
+  1. Built the in-app notification service and API (`GET /api/v1/notifications`, `PATCH /notifications/{id}/read`, `PATCH /notifications/read-all`) with unread counts.
+  2. Wired notifications into the team lifecycle: application received, withdrawal, shortlist, rejection, invitation accepted/declined, and team finalization.
+  3. Built admin endpoints for scraper run summaries and hackathon moderation (approve/reject), backed by a new `hackathons.is_verified` column (migration `002`).
+  4. Replaced the admin stub with a real `users.is_admin` guard (migration `003`); non-admin users receive `403`.
+  5. Added `backend/Dockerfile` and root `docker-compose.yml` (PostgreSQL 16 + pgvector, healthcheck, automatic `alembic upgrade head` on startup, hot-reload dev server).
+  6. Added `tests/unit/test_notifications_and_admin.py` (12/12 tests passing) covering notification persistence, workflow emissions, read state, admin authorization/moderation, and container files.
+
+---
+
+## 4. Test Suite Status
+- **Total:** 54 tests, 54 passing (`pytest` against SQLite with pgvector compiled to TEXT).
+- Suites: health/core, auth/profiles, hackathons/scraper, team formation, resume/AI, matching (unit + integration), notifications/admin.
+- Alembic chain: `001_initial_schema` $\rightarrow$ `002_hackathon_is_verified` $\rightarrow$ `003_user_is_admin`.
+
+---
+
+## 5. Key Architectural & Business Rules
 1. **Contextual Roles:** Users do not have fixed global participant/leader roles. Any user can be a team leader for team X while being a participant applying to team Y.
 2. **Two-Sided Recruitment:** A candidate is never an official team member merely because a leader shortlists them or the candidate accepts an invitation.
 3. **Pessimistic Finalization:** Official membership is created only upon atomic leader finalization with pessimistic row locking (`SELECT FOR UPDATE`) and vacancy capacity checks.
 4. **AI Explainability & Fairness:** Semantic scores are never treated as probabilities. Candidates receive score component breakdowns and evidence-grounded reasons.
+5. **Candidate Privacy:** Candidate queues and explanations are visible only to the team leader and active members.
+6. **Vector Freshness:** Persisted embeddings are recomputed whenever confirmed skills or projects change, so matching never scores stale evidence.
 
 ---
 
-## 5. Upcoming Phase: Phase 2
-- **Phase 2: Authentication, Authorization & User Profile Management**
-  - Bootstrap user profile after authentication (`/auth/profile/bootstrap`)
-  - Authenticated user endpoints (`/profiles/me` GET & PATCH)
-  - Profile sub-resources CRUD: Skills, Projects, Experience, Achievements
-  - Privacy visibility filters and access guardrails
+## 6. Roadmap / Not Yet Implemented
+- **Frontend application** (candidate swipe/screening UI, team dashboard, catalog) — repository is currently backend + scraper only.
+- **Background workers/scheduler** (`app/workers/`) for periodic crawling, retries, and embedding backfills. Scrapes are currently triggered on demand.
+- **External notification delivery** (email/push) — `NotificationDelivery` exists but only in-app notifications are produced.
+- **Admin bootstrap tooling** — promote an account with `UPDATE users SET is_admin = true WHERE email = '...'` until an ops CLI exists.
+- **Additional source adapters** beyond Mock/Devfolio, plus rate limiting and refresh-token rotation for production hardening.

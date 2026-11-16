@@ -4,6 +4,8 @@ from typing import Optional
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from app.ai.embeddings.generator import embed_skills, embed_text, get_model_version
+from app.ai.embeddings.store import upsert_team_problem_embedding
 from app.core.exceptions import (
     CapacityExceededError,
     ConflictError,
@@ -20,7 +22,7 @@ from app.models.team import (
     TeamPreference,
     TeamRole,
 )
-from app.models.user import User
+from app.models.user import User, UserProfile
 from app.schemas.common import PaginationMeta
 from app.schemas.team import (
     CandidateFinalizeSelection,
@@ -29,9 +31,16 @@ from app.schemas.team import (
     TeamRoleCreate,
     TeamUpdateRequest,
 )
+from app.services import notification_service as notif
 
 
 class TeamService:
+    @staticmethod
+    async def _display_name(db: AsyncSession, user_id: uuid.UUID) -> str:
+        """Resolve a user's display name for notification copy."""
+        stmt = select(UserProfile.display_name).where(UserProfile.user_id == user_id)
+        return (await db.execute(stmt)).scalar_one_or_none() or "A candidate"
+
     @staticmethod
     async def create_team(
         db: AsyncSession, leader_id: uuid.UUID, req: TeamCreateRequest
@@ -79,6 +88,9 @@ class TeamService:
                 mandatory_skills=r.mandatory_skills,
                 preferred_skills=r.preferred_skills,
                 experience_level=r.experience_level,
+                role_embedding=embed_skills(
+                    list(r.mandatory_skills or []) + list(r.preferred_skills or [])
+                ),
             )
             db.add(role)
 
@@ -98,6 +110,18 @@ class TeamService:
             preference = TeamPreference(id=uuid.uuid4(), team_id=team_id)
         db.add(preference)
 
+        await db.commit()
+
+        # Build the team's problem-domain embedding for semantic candidate matching
+        problem_text = " ".join(
+            part for part in (req.problem_statement, req.project_idea) if part
+        )
+        await upsert_team_problem_embedding(
+            db,
+            team_id=team_id,
+            problem_embedding=embed_text(problem_text),
+            model_version=get_model_version(),
+        )
         await db.commit()
 
         # Reload with relationships
@@ -194,6 +218,9 @@ class TeamService:
             mandatory_skills=req.mandatory_skills,
             preferred_skills=req.preferred_skills,
             experience_level=req.experience_level,
+            role_embedding=embed_skills(
+                list(req.mandatory_skills or []) + list(req.preferred_skills or [])
+            ),
         )
         db.add(role)
         await db.commit()
@@ -294,6 +321,18 @@ class TeamService:
             status="submitted",
         )
         db.add(application)
+        await db.flush()
+
+        applicant_name = await TeamService._display_name(db, applicant_id)
+        await notif.notify_application_received(
+            db,
+            team_leader_id=team.leader_id,
+            applicant_name=applicant_name,
+            team_name=team.name,
+            team_id=team.id,
+            application_id=application.id,
+        )
+
         await db.commit()
         await db.refresh(application)
         return application
@@ -314,6 +353,20 @@ class TeamService:
             raise ConflictError(message="Cannot withdraw an already finalized application")
 
         app.status = "withdrawn"
+
+        team = (
+            await db.execute(select(Team).where(Team.id == app.team_id))
+        ).scalar_one()
+        applicant_name = await TeamService._display_name(db, applicant_id)
+        await notif.notify_application_withdrawn(
+            db,
+            leader_id=team.leader_id,
+            applicant_name=applicant_name,
+            team_name=team.name,
+            team_id=team.id,
+            application_id=app.id,
+        )
+
         await db.commit()
         await db.refresh(app)
         return app
@@ -387,6 +440,14 @@ class TeamService:
             if app:
                 app.status = "shortlisted"
 
+            await notif.notify_application_shortlisted(
+                db,
+                applicant_id=candidate_id,
+                team_name=team.name,
+                team_id=team.id,
+                application_id=app.id if app else invitation.id,
+            )
+
         elif action == "reject":
             # Update application if exists
             app_stmt = select(TeamApplication).where(
@@ -397,6 +458,13 @@ class TeamService:
             app = (await db.execute(app_stmt)).scalar_one_or_none()
             if app:
                 app.status = "rejected"
+                await notif.notify_application_rejected(
+                    db,
+                    applicant_id=candidate_id,
+                    team_name=team.name,
+                    team_id=team.id,
+                    application_id=app.id,
+                )
 
         await db.commit()
 
@@ -439,6 +507,23 @@ class TeamService:
                 app.status = "candidate_declined"
         else:
             raise ConflictError(message="Invalid invitation response action")
+
+        team = (
+            await db.execute(select(Team).where(Team.id == inv.team_id))
+        ).scalar_one()
+        candidate_name = await TeamService._display_name(db, candidate_id)
+        notify = (
+            notif.notify_invitation_accepted
+            if action == "accept"
+            else notif.notify_invitation_declined
+        )
+        await notify(
+            db,
+            leader_id=team.leader_id,
+            candidate_name=candidate_name,
+            team_name=team.name,
+            invitation_id=inv.id,
+        )
 
         await db.commit()
         await db.refresh(inv)
@@ -557,6 +642,13 @@ class TeamService:
         for p_app in pending_apps:
             p_app.status = "not_selected"
             not_selected_cand_ids.append(p_app.applicant_id)
+
+        await notif.notify_team_finalized(
+            db,
+            member_ids=finalized_candidates,
+            team_name=team.name,
+            team_id=team.id,
+        )
 
         await db.commit()
 

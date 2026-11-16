@@ -67,6 +67,7 @@ class Hackathon(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     last_scraped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     data_quality_status: Mapped[str] = mapped_column(String(32), default="verified", nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
 
     # Relationships
     source_records: Mapped[list["HackathonSourceRecord"]] = relationship(

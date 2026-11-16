@@ -22,6 +22,7 @@ from app.models.user import (
     UserSkill,
 )
 from app.schemas.resume import ParsedResumeDraftSchema
+from app.services.embedding_service import refresh_candidate_embeddings
 
 settings = get_settings()
 
@@ -227,6 +228,9 @@ class ResumeService:
                 generated_at=now,
             )
             db.add(intel)
+
+        # 7. Build semantic vectors for matching (skill + project embeddings)
+        await refresh_candidate_embeddings(db, user_id)
 
         await db.commit()
         await db.refresh(intel)

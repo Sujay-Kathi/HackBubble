@@ -2,8 +2,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.v1.admin import router as admin_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.hackathons import router as hackathons_router
+from app.api.v1.matching import router as matching_router
+from app.api.v1.notifications import router as notifications_router
 from app.api.v1.profiles import router as profiles_router
 from app.api.v1.resumes import router as resumes_router
 from app.api.v1.teams import router as teams_router
@@ -20,6 +23,9 @@ api_router.include_router(profiles_router)
 api_router.include_router(resumes_router)
 api_router.include_router(hackathons_router)
 api_router.include_router(teams_router)
+api_router.include_router(matching_router)
+api_router.include_router(notifications_router)
+api_router.include_router(admin_router)
 
 
 @api_router.get("/health", response_model=APIResponse[HealthCheckResponse], tags=["System"])
