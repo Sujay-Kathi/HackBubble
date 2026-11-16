@@ -50,6 +50,23 @@ This document records the architectural decisions, system milestones, state mach
 
 ---
 
+### Phase 2: Authentication, Authorization & User Profile Management (Completed ✅)
+- **Date Completed:** 16 November 2026
+- **Accomplishments:**
+  1. Implemented JWT authentication and authorization dependencies (`app/api/deps.py`), supporting contextual roles and account status validation.
+  2. Built registration (`POST /api/v1/auth/register`), login (`POST /api/v1/auth/login`), and profile bootstrapping (`POST /api/v1/auth/profile/bootstrap`).
+  3. Built full User Profile management endpoints in `app/api/v1/profiles.py`:
+     - Profile retrieval and updating (`GET /api/v1/profiles/me`, `PATCH /api/v1/profiles/me`).
+     - Skills CRUD (`POST`, `PATCH`, `DELETE /api/v1/profiles/me/skills`).
+     - Projects CRUD (`POST`, `PATCH`, `DELETE /api/v1/profiles/me/projects`).
+     - Experience CRUD (`POST`, `DELETE /api/v1/profiles/me/experience`).
+     - Achievements CRUD (`POST`, `DELETE /api/v1/profiles/me/achievements`).
+     - Profile privacy enforcement (`GET /api/v1/profiles/{user_id}`) respecting `public`, `registered_only`, and `private` visibility rules.
+  4. Switched password hashing to direct `bcrypt` implementation with 72-byte safe truncation.
+  5. Added comprehensive test suite in `tests/unit/test_auth_and_profiles.py` verifying registration, duplicate rejection, login, profile CRUD, and privacy rules (8/8 tests passing).
+
+---
+
 ## 4. Key Architectural & Business Rules
 1. **Contextual Roles:** Users do not have fixed global participant/leader roles. Any user can be a team leader for team X while being a participant applying to team Y.
 2. **Two-Sided Recruitment:** A candidate is never an official team member merely because a leader shortlists them or the candidate accepts an invitation.
