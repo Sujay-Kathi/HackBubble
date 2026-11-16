@@ -10,6 +10,7 @@ class Hackathon {
   final String sourceName;
   final DateTime? registrationDeadline;
   final String status;
+  final String? imageUrl;
   bool isBookmarked;
 
   Hackathon({
@@ -25,6 +26,7 @@ class Hackathon {
     this.registrationDeadline,
     required this.status,
     this.isBookmarked = false,
+    this.imageUrl,
   });
 
   factory Hackathon.fromJson(Map<String, dynamic> j) => Hackathon(
@@ -39,5 +41,6 @@ class Hackathon {
         sourceName: j['source_name'],
         registrationDeadline: j['registration_deadline'] != null ? DateTime.parse(j['registration_deadline']) : null,
         status: j['status'] ?? 'upcoming',
+        imageUrl: j['image_url'],
       );
 }
