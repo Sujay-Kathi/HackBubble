@@ -60,8 +60,8 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE INDEX ix_team_intel_problem_embed_hnsw
-            ON team_intelligence (problem_embedding vector_cosine_ops)
-            USING hnsw
+            ON team_intelligence
+            USING hnsw (problem_embedding vector_cosine_ops)
             WITH (m = 16, ef_construction = 64);
         """
     )
@@ -71,8 +71,8 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE INDEX ix_team_roles_role_embed_hnsw
-            ON team_roles (role_embedding vector_cosine_ops)
-            USING hnsw
+            ON team_roles
+            USING hnsw (role_embedding vector_cosine_ops)
             WITH (m = 16, ef_construction = 64);
         """
     )
