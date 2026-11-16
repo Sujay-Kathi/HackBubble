@@ -109,4 +109,5 @@ class HackathonNormalizer:
             "prize_pool_currency": raw.get("prize_pool_currency") or "USD",
             "status": computed_status,
             "data_quality_status": "verified" if event_url and raw.get("title") else "needs_review",
+            "image_url": raw.get("image_url"),
         }

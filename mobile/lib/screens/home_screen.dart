@@ -44,6 +44,18 @@ class _HackathonCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (hackathon.imageUrl != null && hackathon.imageUrl!.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  hackathon.imageUrl!,
+                  height: 140,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+            if (hackathon.imageUrl != null && hackathon.imageUrl!.isNotEmpty) const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(

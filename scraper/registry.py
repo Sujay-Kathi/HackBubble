@@ -11,6 +11,7 @@ from collections.abc import Callable
 
 from scraper.core.base_scraper import BaseHackathonScraper
 from scraper.sources.devfolio import DevfolioScraper
+from scraper.sources.hackathon_com import HackathonComScraper
 from scraper.sources.mock import MockHackathonScraper
 
 AdapterFactory = Callable[[], BaseHackathonScraper]
@@ -18,6 +19,7 @@ AdapterFactory = Callable[[], BaseHackathonScraper]
 _ADAPTERS: dict[str, AdapterFactory] = {
     MockHackathonScraper.adapter_key: MockHackathonScraper,
     DevfolioScraper.adapter_key: DevfolioScraper,
+    HackathonComScraper.adapter_key: HackathonComScraper,
 }
 
 
